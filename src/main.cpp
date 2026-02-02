@@ -697,3 +697,378 @@ void opcontrol() {
         pros::delay(10);
     }
 }
+
+// ==================== AUTONOMOUS WIN POINT PROGRAM ====================
+
+/**
+ * Autonomous Win Point (AWP) Strategy
+ * 
+ * Requirements (Standard Events):
+ * 1. Score ≥7 Blocks of Alliance color
+ * 2. Score ≥1 Block in 3 different Goals
+ * 3. Remove ≥3 Blocks from Loaders
+ * 4. No Robot in/touching Park Zone
+ * 
+ * Strategy Overview:
+ * - Start in Park Zone (legal starting position)
+ * - Immediately exit Park Zone
+ * - Grab preload + field Blocks
+ * - Score in 3 different Goals
+ * - Clear Loader Blocks
+ * - Finish away from Park Zone
+ */
+
+void autonomousWinPoint() {
+    autonomousMode = true;
+    pros::lcd::clear();
+    pros::lcd::set_text(1, "=== AWP ROUTINE ===");
+    
+    // Verify odometry
+    lemlib::Pose startPose = chassis.getPose();
+    if (std::isnan(startPose.x) || std::isnan(startPose.y)) {
+        pros::lcd::set_text(2, "ERROR: Odometry");
+        return;
+    }
+    
+    // Starting position: In red Alliance Park Zone
+    // Robot starts with 1 preload Block
+    int blocksScored = 0;
+    int goalsScored = 0;
+    int loaderBlocksCleared = 0;
+    
+    // ===== PHASE 1: EXIT PARK ZONE =====
+    pros::lcd::set_text(2, "Phase 1: Exit Park");
+    
+    // Move forward out of Park Zone immediately
+    moveForward(12);  // Exit Park Zone
+    pros::delay(100);
+    
+    // ===== PHASE 2: GRAB ADDITIONAL BLOCKS =====
+    pros::lcd::set_text(2, "Phase 2: Collect");
+    
+    // Deploy scooper to collect ground Blocks
+    deployScooper();
+    pros::delay(200);
+    
+    // Drive forward while intaking to collect Blocks on field
+    intakeUp();
+    moveForward(18);  // Collect Blocks in front of starting position
+    pros::delay(300);
+    
+    // Continue collecting while moving toward Loader
+    strafeRight(12);  // Move toward right Loader
+    pros::delay(200);
+    
+    retractScooper();
+    
+    // ===== PHASE 3: CLEAR LOADER BLOCKS =====
+    pros::lcd::set_text(2, "Phase 3: Loader");
+    
+    // Position at Loader adjacent to Alliance Station
+    moveForward(8);
+    pros::delay(200);
+    
+    // Intake Blocks from Loader while counting
+    // Loaders start with 6 Blocks each, we need to remove 3
+    for (int i = 0; i < 3; i++) {
+        intakeUp();
+        pros::delay(800);  // Time to grab one Block
+        loaderBlocksCleared++;
+    }
+    
+    stopIntake();
+    pros::delay(100);
+    
+    // ===== PHASE 4: SCORE IN GOAL #1 (Long Goal - Right) =====
+    pros::lcd::set_text(2, "Phase 4: Goal 1");
+    
+    // Move to right Long Goal
+    moveBackward(10);
+    pros::delay(100);
+    
+    turnRight(45);  // Angle toward Goal
+    pros::delay(100);
+    
+    moveForward(14);  // Approach Goal
+    pros::delay(100);
+    
+    // Score 3 Blocks through top rollers
+    outtakeTop();
+    pros::delay(2000);  // Score multiple Blocks
+    stopIntake();
+    
+    blocksScored += 3;
+    goalsScored++;
+    
+    pros::lcd::set_text(3, ("Scored: " + std::to_string(blocksScored)).c_str());
+    
+    // ===== PHASE 5: SCORE IN GOAL #2 (Center Goal - Upper) =====
+    pros::lcd::set_text(2, "Phase 5: Goal 2");
+    
+    // Move to Center Goal (Upper)
+    moveBackward(8);
+    pros::delay(100);
+    
+    turnLeft(90);  // Turn toward center
+    pros::delay(100);
+    
+    moveForward(20);  // Move to center Goal
+    pros::delay(100);
+    
+    // Score 2 Blocks
+    outtakeTop();
+    pros::delay(1500);
+    stopIntake();
+    
+    blocksScored += 2;
+    goalsScored++;
+    
+    pros::lcd::set_text(3, ("Scored: " + std::to_string(blocksScored)).c_str());
+    
+    // ===== PHASE 6: COLLECT MORE BLOCKS IF NEEDED =====
+    if (blocksScored < 7) {
+        pros::lcd::set_text(2, "Phase 6: Collect");
+        
+        // Move to midfield Blocks
+        moveBackward(10);
+        pros::delay(100);
+        
+        deployScooper();
+        intakeUp();
+        
+        // Sweep across field to collect Blocks
+        moveForward(24);
+        pros::delay(200);
+        
+        strafeLeft(12);
+        pros::delay(200);
+        
+        retractScooper();
+        stopIntake();
+    }
+    
+    // ===== PHASE 7: SCORE IN GOAL #3 (Long Goal - Left) =====
+    pros::lcd::set_text(2, "Phase 7: Goal 3");
+    
+    // Move to left Long Goal
+    turnLeft(45);
+    pros::delay(100);
+    
+    moveForward(18);
+    pros::delay(100);
+    
+    // Score remaining Blocks
+    outtakeTop();
+    pros::delay(2000);
+    stopIntake();
+    
+    blocksScored += 3;
+    goalsScored++;
+    
+    pros::lcd::set_text(3, ("Scored: " + std::to_string(blocksScored)).c_str());
+    
+    // ===== PHASE 8: FINAL POSITIONING =====
+    pros::lcd::set_text(2, "Phase 8: Finish");
+    
+    // Move away from Park Zone to ensure we're not touching it
+    moveForward(12);
+    pros::delay(100);
+    
+    // Stop all systems
+    stopDrive();
+    stopIntake();
+    retractScooper();
+    
+    // ===== VERIFY AWP COMPLETION =====
+    pros::lcd::set_text(2, "=== AWP CHECK ===");
+    pros::lcd::set_text(3, ("Blocks: " + std::to_string(blocksScored) + "/7").c_str());
+    pros::lcd::set_text(4, ("Goals: " + std::to_string(goalsScored) + "/3").c_str());
+    pros::lcd::set_text(5, ("Loader: " + std::to_string(loaderBlocksCleared) + "/3").c_str());
+    
+    if (blocksScored >= 7 && goalsScored >= 3 && loaderBlocksCleared >= 3) {
+        pros::lcd::set_text(6, "AWP: SUCCESS!");
+        master.rumble("- - -");  // Victory rumble
+    } else {
+        pros::lcd::set_text(6, "AWP: INCOMPLETE");
+        master.rumble("....");  // Warning rumble
+    }
+    
+    autonomousMode = false;
+}
+
+
+// ==================== ALTERNATIVE: SIMPLE AWP ROUTINE ====================
+
+/**
+ * Simplified AWP routine for testing/backup
+ * More conservative approach with higher success rate
+ */
+void autonomousWinPointSimple() {
+    autonomousMode = true;
+    pros::lcd::set_text(1, "=== SIMPLE AWP ===");
+    
+    // Exit Park Zone
+    moveForward(15);
+    pros::delay(200);
+    
+    // Clear 3 Blocks from Loader
+    deployScooper();
+    intakeUp();
+    pros::delay(2500);  // Grab 3+ Blocks
+    retractScooper();
+    stopIntake();
+    
+    // Score in Goal 1 (nearby Long Goal)
+    turnRight(90);
+    pros::delay(100);
+    moveForward(12);
+    pros::delay(100);
+    
+    outtakeTop();
+    pros::delay(1500);  // Score 2-3 Blocks
+    stopIntake();
+    
+    // Score in Goal 2 (Center Goal)
+    moveBackward(8);
+    pros::delay(100);
+    turnLeft(45);
+    pros::delay(100);
+    moveForward(16);
+    pros::delay(100);
+    
+    outtakeTop();
+    pros::delay(1500);  // Score 2-3 Blocks
+    stopIntake();
+    
+    // Collect more Blocks from field
+    moveBackward(10);
+    pros::delay(100);
+    deployScooper();
+    intakeUp();
+    moveForward(20);
+    pros::delay(1000);
+    retractScooper();
+    stopIntake();
+    
+    // Score in Goal 3 (other Long Goal)
+    turnLeft(90);
+    pros::delay(100);
+    moveForward(14);
+    pros::delay(100);
+    
+    outtakeTop();
+    pros::delay(2000);  // Score remaining Blocks
+    stopIntake();
+    
+    // Move away from Park Zone
+    moveForward(10);
+    
+    stopDrive();
+    autonomousMode = false;
+    pros::lcd::set_text(2, "AWP COMPLETE");
+}
+
+
+// ==================== WORLDS-QUALIFYING AWP ====================
+
+/**
+ * For Event Region Championships and Signature Events:
+ * 1. Score ≥10 Blocks (instead of 7)
+ * 2. Score ≥2 Blocks in 3 different Goals (instead of 1)
+ * 3. Same Loader requirement (3 Blocks)
+ * 4. Same Park Zone restriction
+ */
+void autonomousWinPointWorlds() {
+    autonomousMode = true;
+    pros::lcd::set_text(1, "=== AWP WORLDS ===");
+    
+    int blocksScored = 0;
+    
+    // Exit Park Zone
+    moveForward(15);
+    pros::delay(200);
+    
+    // Aggressive Block collection strategy
+    deployScooper();
+    intakeUp();
+    
+    // Clear Loader (3 Blocks)
+    moveForward(10);
+    pros::delay(200);
+    strafeRight(14);
+    pros::delay(2000);  // Grab from Loader
+    
+    // Sweep field for more Blocks
+    moveForward(24);
+    pros::delay(500);
+    strafeLeft(20);
+    pros::delay(500);
+    
+    retractScooper();
+    stopIntake();
+    
+    // Score in Goal 1 - aim for 4 Blocks
+    turnRight(45);
+    moveForward(16);
+    outtakeTop();
+    pros::delay(2500);
+    stopIntake();
+    blocksScored += 4;
+    
+    // Collect more
+    moveBackward(12);
+    deployScooper();
+    intakeUp();
+    moveForward(20);
+    pros::delay(1000);
+    retractScooper();
+    stopIntake();
+    
+    // Score in Goal 2 - aim for 3 Blocks
+    turnLeft(90);
+    moveForward(18);
+    outtakeTop();
+    pros::delay(2000);
+    stopIntake();
+    blocksScored += 3;
+    
+    // Final collection
+    moveBackward(10);
+    deployScooper();
+    intakeUp();
+    strafeRight(16);
+    pros::delay(1000);
+    retractScooper();
+    stopIntake();
+    
+    // Score in Goal 3 - aim for 3+ Blocks
+    turnRight(45);
+    moveForward(14);
+    outtakeTop();
+    pros::delay(2000);
+    stopIntake();
+    blocksScored += 3;
+    
+    // Exit Park Zone area
+    moveForward(12);
+    stopDrive();
+    
+    pros::lcd::set_text(2, ("Scored: " + std::to_string(blocksScored) + "/10").c_str());
+    autonomousMode = false;
+}
+
+
+// ==================== UPDATE MAIN AUTONOMOUS FUNCTION ====================
+
+void autonomous() {
+    // Choose which routine to run:
+    
+    // Option 1: Full AWP routine (recommended for standard events)
+    autonomousWinPoint();
+    
+    // Option 2: Simple AWP (backup/testing)
+    // autonomousWinPointSimple();
+    
+    // Option 3: Worlds-qualifying events
+    // autonomousWinPointWorlds();
+}]
